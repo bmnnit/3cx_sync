@@ -160,6 +160,19 @@ For production use, set up a cron job to run the sync automatically.
 - Contacts rarely change
 - Slight delays in synchronization are acceptable
 
+#### Prerequisites
+
+Before setting up the cron job, create the log file with proper ownership:
+
+```bash
+# Create log file and set ownership to postgres user
+sudo touch /var/log/contacts-sync.log
+sudo chown postgres:postgres /var/log/contacts-sync.log
+sudo chmod 640 /var/log/contacts-sync.log
+```
+
+**Note:** The log file must exist and be owned by the `postgres` user, otherwise the cron job will fail to write logs.
+
 #### Cron Configuration
 
 ```bash
