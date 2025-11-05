@@ -136,6 +136,118 @@ After configuring `run.sh`:
 ./run.sh
 ```
 
+## Production Deployment
+
+### Setting Up Automated Sync with Cron
+
+For production use, set up a cron job to run the sync automatically.
+
+**Recommended Configuration:**
+
+```bash
+# Edit crontab for postgres user
+sudo crontab -e -u postgres
+
+# Add one of these lines:
+
+# Option 1: Every 15 minutes (recommended)
+*/15 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >>/var/log/contacts-sync.log 2>&1'
+
+# Option 2: Every 30 minutes
+*/30 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >>/var/log/contacts-sync.log 2>&1'
+
+# Option 3: Hourly
+0 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >>/var/log/contacts-sync.log 2>&1'
+```
+
+**Important Notes:**
+
+- **Use `>>` not `>`** - Append to log file instead of overwriting
+- **flock prevents concurrent runs** - The `-n` flag ensures only one instance runs at a time
+- **Adjust frequency** - Every minute (`*/1`) is usually too frequent for contact sync
+- **Running as postgres user** - Required for Unix socket access to PostgreSQL database
+
+### Log Rotation
+
+Create `/etc/logrotate.d/contacts-sync` to prevent log files from filling disk:
+
+```
+/var/log/contacts-sync.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 postgres postgres
+}
+```
+
+Apply the configuration:
+```bash
+sudo logrotate -f /etc/logrotate.d/contacts-sync
+```
+
+### Monitoring
+
+Monitor sync status:
+```bash
+# View recent log entries
+tail -f /var/log/contacts-sync.log
+
+# Check if sync is running
+ps aux | grep sync_exchange
+
+# Check lock file
+ls -l /var/lock/contacts-sync.lock
+
+# Test cron job manually
+sudo -u postgres /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh'
+```
+
+### Systemd Timer Alternative
+
+As an alternative to cron, you can use systemd timers:
+
+**Create `/etc/systemd/system/contacts-sync.service`:**
+```ini
+[Unit]
+Description=3CX Contacts Sync to Exchange
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+WorkingDirectory=/opt/contacts-sync
+ExecStart=/opt/contacts-sync/run.sh
+StandardOutput=append:/var/log/contacts-sync.log
+StandardError=append:/var/log/contacts-sync.log
+```
+
+**Create `/etc/systemd/system/contacts-sync.timer`:**
+```ini
+[Unit]
+Description=Run 3CX Contacts Sync every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+**Enable and start:**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable contacts-sync.timer
+sudo systemctl start contacts-sync.timer
+
+# Check status
+sudo systemctl status contacts-sync.timer
+sudo systemctl list-timers contacts-sync.timer
+```
+
 ## Scripts Description
 
 ### sync_phonebook.py
