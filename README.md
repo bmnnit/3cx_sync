@@ -12,7 +12,7 @@ This project provides tools to export and synchronize contact information from a
 ## Features
 
 - Export 3CX phonebook data in multiple formats (TSV, CSV, NDJSON)
-- Two-way sync with Microsoft Exchange Server
+- One-way sync from 3CX to Microsoft Exchange Server
 - Automatic phone number normalization to E.164 international format
 - Email address validation and formatting
 - Support for multiple phone numbers per contact (Business, Mobile, Home)
