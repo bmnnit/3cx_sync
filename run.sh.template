@@ -1,0 +1,9 @@
+. /opt/contacts-sync/.venv/bin/activate
+export EXCH_EMAIL="your@mail.de"
+export EXCH_USER="youruser(itstheemail too)"
+export EXCH_PASS="youseceretpawd"
+export EXCH_AUTODISCOVER=false
+export EXCH_SERVER="exchange.host.de"
+export EXCH_FOLDER=Contacts-3cx
+
+python3 /opt/contacts-sync/sync_exchange_contacts.py --update
