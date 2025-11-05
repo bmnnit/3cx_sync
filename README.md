@@ -136,6 +136,155 @@ After configuring `run.sh`:
 ./run.sh
 ```
 
+## Production Deployment
+
+### Setting Up Automated Sync with Cron
+
+For production use, set up a cron job to run the sync automatically.
+
+#### Choosing the Right Frequency
+
+**Use every 1 minute (`*/1`) if:**
+- Your contacts change very frequently and need near-real-time sync
+- The sync completes quickly (under 10 seconds)
+- Server load is not a concern
+
+**Use every 15-30 minutes (`*/15` or `*/30`) if:** ⚠️ **Recommended**
+- Contacts don't change that often in your organization
+- The sync takes more than a few seconds to complete
+- You want to reduce load on PostgreSQL and Exchange Server
+- Exchange Server performance is a concern
+- You need to be mindful of API rate limits
+
+**Use hourly (`0 * * * *`) if:**
+- Contacts rarely change
+- Slight delays in synchronization are acceptable
+
+#### Prerequisites
+
+Before setting up the cron job, create the log file with proper ownership:
+
+```bash
+# Create log file and set ownership to postgres user
+sudo touch /var/log/contacts-sync.log
+sudo chown postgres:postgres /var/log/contacts-sync.log
+sudo chmod 640 /var/log/contacts-sync.log
+```
+
+**Note:** The log file must exist and be owned by the `postgres` user, otherwise the cron job will fail to write logs.
+
+#### Cron Configuration
+
+```bash
+# Edit crontab for postgres user
+sudo crontab -e -u postgres
+
+# Add one of these lines based on your needs:
+
+# Option 1: Every minute (high-frequency sync)
+*/1 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
+
+# Option 2: Every 15 minutes (recommended for most use cases)
+*/15 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
+
+# Option 3: Every 30 minutes (balanced approach)
+*/30 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
+
+# Option 4: Hourly (low-frequency sync)
+0 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
+```
+
+#### Important Notes
+
+- **flock prevents concurrent runs** - The `-n` flag ensures only one instance runs at a time, preventing conflicts
+- **Running as postgres user** - Required for Unix socket access to PostgreSQL database
+- **Log handling** - Using `>` overwrites the log each time (keeps only last run for simple debugging)
+  - Use `>` if you only need the last run's output for error checking
+  - Use `>>` if you want to keep historical logs (requires log rotation - see below)
+
+### Log Rotation (Optional)
+
+Only needed if you use `>>` to append logs instead of overwriting.
+
+Create `/etc/logrotate.d/contacts-sync`:
+
+```
+/var/log/contacts-sync.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 postgres postgres
+}
+```
+
+Apply the configuration:
+```bash
+sudo logrotate -f /etc/logrotate.d/contacts-sync
+```
+
+### Monitoring
+
+Monitor sync status:
+```bash
+# View recent log entries
+tail -f /var/log/contacts-sync.log
+
+# Check if sync is running
+ps aux | grep sync_exchange
+
+# Check lock file
+ls -l /var/lock/contacts-sync.lock
+
+# Test cron job manually
+sudo -u postgres /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh'
+```
+
+### Systemd Timer Alternative
+
+As an alternative to cron, you can use systemd timers:
+
+**Create `/etc/systemd/system/contacts-sync.service`:**
+```ini
+[Unit]
+Description=3CX Contacts Sync to Exchange
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=postgres
+WorkingDirectory=/opt/contacts-sync
+ExecStart=/opt/contacts-sync/run.sh
+StandardOutput=append:/var/log/contacts-sync.log
+StandardError=append:/var/log/contacts-sync.log
+```
+
+**Create `/etc/systemd/system/contacts-sync.timer`:**
+```ini
+[Unit]
+Description=Run 3CX Contacts Sync every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+**Enable and start:**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable contacts-sync.timer
+sudo systemctl start contacts-sync.timer
+
+# Check status
+sudo systemctl status contacts-sync.timer
+sudo systemctl list-timers contacts-sync.timer
+```
+
 ## Scripts Description
 
 ### sync_phonebook.py
@@ -223,7 +372,34 @@ Synchronizes 3CX phonebook contacts to Microsoft Exchange Server.
 
 ## License
 
-[Add your license information here]
+BSD 3-Clause License
+
+Copyright (c) 2025, 3CX Phonebook Sync Contributors
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Contributing
 
