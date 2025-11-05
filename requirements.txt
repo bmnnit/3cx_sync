@@ -1,0 +1,9 @@
+# PostgreSQL database adapters
+psycopg2-binary>=2.9.0    # For sync_phonebook.py (older psycopg2 API)
+psycopg>=3.1.0            # For sync_exchange_contacts.py (modern psycopg3 API)
+
+# Microsoft Exchange integration
+exchangelib>=5.0.0        # Exchange Web Services (EWS) client library
+
+# Phone number parsing and validation
+phonenumbers>=8.13.0      # International phone number formatting and validation
