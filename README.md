@@ -142,34 +142,58 @@ After configuring `run.sh`:
 
 For production use, set up a cron job to run the sync automatically.
 
-**Recommended Configuration:**
+#### Choosing the Right Frequency
+
+**Use every 1 minute (`*/1`) if:**
+- Your contacts change very frequently and need near-real-time sync
+- The sync completes quickly (under 10 seconds)
+- Server load is not a concern
+
+**Use every 15-30 minutes (`*/15` or `*/30`) if:** ⚠️ **Recommended**
+- Contacts don't change that often in your organization
+- The sync takes more than a few seconds to complete
+- You want to reduce load on PostgreSQL and Exchange Server
+- Exchange Server performance is a concern
+- You need to be mindful of API rate limits
+
+**Use hourly (`0 * * * *`) if:**
+- Contacts rarely change
+- Slight delays in synchronization are acceptable
+
+#### Cron Configuration
 
 ```bash
 # Edit crontab for postgres user
 sudo crontab -e -u postgres
 
-# Add one of these lines:
+# Add one of these lines based on your needs:
 
-# Option 1: Every 15 minutes (recommended)
-*/15 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >>/var/log/contacts-sync.log 2>&1'
+# Option 1: Every minute (high-frequency sync)
+*/1 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
 
-# Option 2: Every 30 minutes
-*/30 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >>/var/log/contacts-sync.log 2>&1'
+# Option 2: Every 15 minutes (recommended for most use cases)
+*/15 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
 
-# Option 3: Hourly
-0 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >>/var/log/contacts-sync.log 2>&1'
+# Option 3: Every 30 minutes (balanced approach)
+*/30 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
+
+# Option 4: Hourly (low-frequency sync)
+0 * * * * /usr/bin/flock -n /var/lock/contacts-sync.lock bash -lc 'cd /opt/contacts-sync && ./run.sh >/var/log/contacts-sync.log 2>&1'
 ```
 
-**Important Notes:**
+#### Important Notes
 
-- **Use `>>` not `>`** - Append to log file instead of overwriting
-- **flock prevents concurrent runs** - The `-n` flag ensures only one instance runs at a time
-- **Adjust frequency** - Every minute (`*/1`) is usually too frequent for contact sync
+- **flock prevents concurrent runs** - The `-n` flag ensures only one instance runs at a time, preventing conflicts
 - **Running as postgres user** - Required for Unix socket access to PostgreSQL database
+- **Log handling** - Using `>` overwrites the log each time (keeps only last run for simple debugging)
+  - Use `>` if you only need the last run's output for error checking
+  - Use `>>` if you want to keep historical logs (requires log rotation - see below)
 
-### Log Rotation
+### Log Rotation (Optional)
 
-Create `/etc/logrotate.d/contacts-sync` to prevent log files from filling disk:
+Only needed if you use `>>` to append logs instead of overwriting.
+
+Create `/etc/logrotate.d/contacts-sync`:
 
 ```
 /var/log/contacts-sync.log {
